@@ -18,8 +18,11 @@ from ssl import CERT_NONE, SSLContext, create_default_context
 import ssl
 from struct import pack as data_pack
 from subprocess import run, PIPE
-from sys import argv
+from sys import argv as _orig_argv
 from sys import exit as _exit
+import sys
+# Patchable argv list for CLI wrapper — mutate elements, don't replace
+argv = list(sys.argv)
 from threading import Event, Thread
 from time import sleep, time
 from typing import Any, List, Set, Tuple
@@ -1748,36 +1751,38 @@ Methods: SLOW, STOMP, GET, POST, HTTP, HEAD, CFBUAM, CACHE, COOKIE,
     # Convert to original argv format and run the main logic
     import sys as _sys
     if method in L4_METHODS:
-        _sys.argv = ["start.py", method, target, str(threads), str(duration)]
+        new_argv = ["start.py", method, target, str(threads), str(duration)]
     else:
-        _sys.argv = [
+        new_argv = [
             "start.py", method, target, "0",  # proxy_type=0 (HTTP)
             str(threads), "http.txt", str(rpc), str(duration)
         ]
 
-    print(f"[MHDDoS CLI] Internal argv: {' '.join(_sys.argv)}")
+    print(f"[MHDDoS CLI] Internal argv: {' '.join(new_argv)}")
     print()
-    # Return the new argv length so caller knows
-    return len(_sys.argv)
+
+    # CRITICAL: mutate argv list IN-PLACE (not replace)
+    # because 'argv = list(sys.argv)' at module top copies values
+    new_argv_list = new_argv
+    argv.clear()
+    argv.extend(new_argv_list)
+    return
 
 
 def _is_simple_cli_mode():
     """Detect if we're being called in simple CLI mode.
     Simple: TARGET METHOD THREADS DURATION (argv[1] looks like URL/IP)
     Original: METHOD URL ... (argv[1] is an all-caps method name)"""
-    import sys as _sys
-    if len(_sys.argv) < 4:
+    if len(argv) < 4:
         return False
-    # Check if first arg looks like a target (has dot, starts with http, or is IP)
-    first = _sys.argv[1].strip()
+    # Check if first arg looks like a target
+    first = argv[1].strip() if len(argv) > 1 else ""
     if first.startswith("http://") or first.startswith("https://"):
         return True
     if first.startswith("--"):
         return True
-    # If it contains a dot and a slash, it's a URL
     if "/" in first and "." in first:
         return True
-    # If it looks like IP:port
     parts = first.split(":")
     if len(parts) == 2 and parts[0].replace(".","").isdigit():
         return True
@@ -1786,7 +1791,6 @@ def _is_simple_cli_mode():
 
 if __name__ == '__main__':
     # Detect simple CLI mode vs original mode
-    import sys as _sys
     if _is_simple_cli_mode():
         _simple_cli()
 
